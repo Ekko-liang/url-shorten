@@ -6,6 +6,7 @@ import logging
 import traceback
 import json
 from flask_cors import CORS
+import time
 
 app = Flask(__name__)
 CORS(app)
@@ -41,13 +42,34 @@ def get_redis_client():
         logger.error("Unexpected Redis URL format (missing @)")
     
     try:
-        client = redis.from_url(redis_url)
-        # 测试连接
-        client.ping()
-        logger.info("Redis connection successful")
-        return client
+        # 在AWS Lambda环境中增加重试机制
+        max_retries = 3
+        retry_delay = 1  # 秒
+        
+        for attempt in range(max_retries):
+            try:
+                client = redis.from_url(
+                    redis_url,
+                    socket_timeout=5,  # 增加超时时间
+                    socket_connect_timeout=5,
+                    retry_on_timeout=True
+                )
+                # 测试连接
+                client.ping()
+                logger.info("Redis connection successful")
+                return client
+            except (redis.ConnectionError, redis.TimeoutError) as e:
+                if attempt == max_retries - 1:  # 最后一次尝试
+                    raise
+                logger.warning(f"Redis connection attempt {attempt + 1} failed: {str(e)}")
+                time.sleep(retry_delay)
+                continue
+            except Exception as e:
+                logger.error(f"Unexpected Redis error: {str(e)}")
+                raise
+                
     except redis.ConnectionError as e:
-        logger.error(f"Redis connection error: {str(e)}")
+        logger.error(f"Redis connection error after {max_retries} attempts: {str(e)}")
         logger.error(traceback.format_exc())
         raise
     except Exception as e:
@@ -55,15 +77,18 @@ def get_redis_client():
         logger.error(traceback.format_exc())
         raise
 
-# 初始化Redis客户端
-try:
-    logger.info("Initializing Redis client...")
-    redis_client = get_redis_client()
-    logger.info("Redis client initialized successfully")
-except Exception as e:
-    logger.error(f"Failed to initialize Redis: {str(e)}")
-    logger.error(traceback.format_exc())
-    redis_client = None
+# 使用延迟初始化
+redis_client = None
+
+def get_redis():
+    global redis_client
+    if redis_client is None:
+        try:
+            redis_client = get_redis_client()
+        except Exception as e:
+            logger.error(f"Failed to initialize Redis: {str(e)}")
+            logger.error(traceback.format_exc())
+    return redis_client
 
 @app.route('/')
 def index():
@@ -77,7 +102,8 @@ def debug():
         env_vars = {k: '***' if 'URL' in k or 'KEY' in k or 'SECRET' in k else v 
                    for k, v in os.environ.items()}
         
-        if redis_client is None:
+        client = get_redis()
+        if client is None:
             return jsonify({
                 'status': 'error',
                 'message': 'Redis client not initialized',
@@ -87,7 +113,7 @@ def debug():
             }), 500
             
         # 测试Redis连接
-        redis_client.ping()
+        client.ping()
         
         return jsonify({
             'status': 'ok',
@@ -109,7 +135,8 @@ def debug():
 @app.route('/shorten', methods=['POST'])
 def shorten_url():
     try:
-        if redis_client is None:
+        client = get_redis()
+        if client is None:
             return jsonify({'error': 'Redis not initialized'}), 500
 
         logger.info("Headers: %s", dict(request.headers))
@@ -136,21 +163,13 @@ def shorten_url():
         hash_object = hashlib.md5(original_url.encode())
         short_id = hash_object.hexdigest()[:6]
         
-        # Test Redis connection before attempting to store
-        try:
-            redis_client.ping()
-            logger.info("Redis connection test successful")
-        except Exception as e:
-            logger.error(f"Redis connection test failed: {str(e)}")
-            return jsonify({'error': 'Database connection error'}), 500
-        
         # Store in Redis
         try:
-            redis_client.set(short_id, original_url)
+            client.set(short_id, original_url)
             logger.info(f"Successfully stored in Redis: {short_id} -> {original_url}")
             
             # Verify the storage
-            stored_url = redis_client.get(short_id)
+            stored_url = client.get(short_id)
             if stored_url:
                 logger.info(f"Verification successful: {stored_url.decode('utf-8')}")
             else:
@@ -175,11 +194,12 @@ def shorten_url():
 @app.route('/<short_id>')
 def redirect_to_url(short_id):
     try:
-        if redis_client is None:
+        client = get_redis()
+        if client is None:
             return 'Database not initialized', 500
             
         logger.info(f"Looking up URL for ID: {short_id}")
-        original_url = redis_client.get(short_id)
+        original_url = client.get(short_id)
         
         if original_url is None:
             logger.warning(f"URL not found for ID: {short_id}")
