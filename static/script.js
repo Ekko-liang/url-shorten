@@ -13,6 +13,7 @@ async function shortenUrl() {
     const finalUrl = url.startsWith('http://') || url.startsWith('https://') ? url : `https://${url}`;
 
     try {
+        console.log('Sending request with URL:', finalUrl);  // Debug log
         const response = await fetch('/shorten', {
             method: 'POST',
             headers: {
@@ -21,12 +22,22 @@ async function shortenUrl() {
             body: JSON.stringify({ url: finalUrl })
         });
 
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+        console.log('Response status:', response.status);  // Debug log
+        const responseText = await response.text();
+        console.log('Response text:', responseText);  // Debug log
+
+        let data;
+        try {
+            data = JSON.parse(responseText);
+        } catch (e) {
+            console.error('Failed to parse response:', e);
+            throw new Error(`Invalid response format: ${responseText}`);
         }
 
-        const data = await response.json();
-        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}, message: ${data.error || responseText}`);
+        }
+
         if (data.short_url) {
             shortUrlElement.textContent = data.short_url;
             copyButton.style.display = 'inline-block';
@@ -34,8 +45,8 @@ async function shortenUrl() {
             throw new Error('No short URL in response');
         }
     } catch (error) {
-        console.error('Error:', error);
-        shortUrlElement.textContent = 'Error: Could not shorten URL';
+        console.error('Error details:', error);  // Debug log
+        shortUrlElement.textContent = `Error: ${error.message}`;
         copyButton.style.display = 'none';
     }
 }
