@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template, redirect
+from flask import Flask, request, jsonify, render_template, redirect, url_for
 import hashlib
 import redis
 import os
@@ -7,9 +7,14 @@ import traceback
 import json
 from flask_cors import CORS
 import time
-from redis.connection import ConnectionPool
+from urllib.parse import urlparse
+from threading import Lock
 
-app = Flask(__name__)
+app = Flask(__name__, 
+    static_url_path='/static',
+    static_folder='static',
+    template_folder='templates'
+)
 CORS(app)
 
 # 配置日志
@@ -19,172 +24,186 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# 全局连接池
-redis_pool = None
-redis_client = None
+# 内存存储作为后备
+class MemoryStorage:
+    def __init__(self):
+        self._storage = {}
+        self._lock = Lock()
+    
+    def set(self, key, value, ex=None):
+        with self._lock:
+            self._storage[key] = {
+                'value': value,
+                'expiry': time.time() + ex if ex else None
+            }
+            return True
+    
+    def get(self, key):
+        with self._lock:
+            if key not in self._storage:
+                return None
+            data = self._storage[key]
+            if data['expiry'] and time.time() > data['expiry']:
+                del self._storage[key]
+                return None
+            return data['value']
+    
+    def delete(self, key):
+        with self._lock:
+            if key in self._storage:
+                del self._storage[key]
+                return True
+            return False
 
-def init_redis_pool():
-    global redis_pool
-    if redis_pool is None:
+# 全局变量
+redis_client = None
+memory_storage = MemoryStorage()
+
+def get_storage():
+    """Get the appropriate storage backend"""
+    global redis_client, memory_storage
+    
+    # 尝试获取 Redis 客户端
+    if redis_client is None:
+        try:
+            redis_client = create_redis_client()
+            if redis_client is not None:
+                logger.info("Successfully initialized Redis client")
+                return redis_client
+        except Exception as e:
+            logger.warning(f"Failed to initialize Redis, falling back to memory storage: {str(e)}")
+    
+    # 如果 Redis 不可用，使用内存存储
+    logger.info("Using memory storage as fallback")
+    return memory_storage
+
+def create_redis_client():
+    """Create a new Redis client"""
+    try:
         redis_url = os.getenv('REDIS_URL')
         if not redis_url:
-            logger.error("REDIS_URL environment variable is missing")
-            raise ValueError("REDIS_URL environment variable is required")
-        
-        logger.info("Initializing Redis connection pool...")
-        redis_pool = ConnectionPool.from_url(
+            logger.error("REDIS_URL environment variable is not set")
+            return None
+
+        # 创建 Redis 客户端
+        client = redis.from_url(
             redis_url,
-            max_connections=10,
+            decode_responses=True,
             socket_timeout=5,
             socket_connect_timeout=5,
-            retry_on_timeout=True
+            socket_keepalive=True,
+            retry_on_timeout=True,
+            health_check_interval=30
         )
-        logger.info("Redis connection pool initialized")
-    return redis_pool
-
-def get_redis():
-    global redis_client, redis_pool
-    try:
-        if redis_client is None:
-            if redis_pool is None:
-                redis_pool = init_redis_pool()
-            redis_client = redis.Redis(
-                connection_pool=redis_pool,
-                socket_timeout=5,
-                socket_connect_timeout=5,
-                retry_on_timeout=True,
-                decode_responses=True  # 自动解码响应
-            )
-            # 测试连接
-            redis_client.ping()
-            logger.info("Redis client initialized and connected")
-        return redis_client
+        
+        # 测试连接
+        client.ping()
+        return client
+        
     except Exception as e:
-        logger.error(f"Failed to initialize Redis client: {str(e)}")
-        logger.error(traceback.format_exc())
+        logger.error(f"Failed to create Redis client: {str(e)}")
         return None
 
 @app.route('/')
 def index():
     return render_template('index.html')
 
-@app.route('/debug')
-def debug():
-    """Debug endpoint to check Redis connection"""
-    try:
-        # 获取所有环境变量（隐藏敏感值）
-        env_vars = {k: '***' if 'URL' in k or 'KEY' in k or 'SECRET' in k else v 
-                   for k, v in os.environ.items()}
-        
-        redis_url = os.getenv('REDIS_URL', '')
-        url_parts = redis_url.split('@')
-        masked_url = f"{url_parts[0].split(':')[0]}:***@{url_parts[1]}" if len(url_parts) > 1 else "invalid_url"
-        
-        client = get_redis()
-        if client is None:
-            return jsonify({
-                'status': 'error',
-                'message': 'Redis client not initialized',
-                'environment': env_vars,
-                'redis_url_exists': bool(redis_url),
-                'redis_url_length': len(redis_url),
-                'redis_url_format': masked_url
-            }), 500
-            
-        # 测试Redis连接
-        client.ping()
-        
-        return jsonify({
-            'status': 'ok',
-            'redis_connected': True,
-            'environment': env_vars,
-            'redis_url_exists': bool(redis_url),
-            'redis_url_length': len(redis_url),
-            'redis_url_format': masked_url
-        })
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'message': str(e),
-            'traceback': traceback.format_exc(),
-            'environment': env_vars,
-            'redis_url_exists': bool(redis_url),
-            'redis_url_length': len(redis_url),
-            'redis_url_format': masked_url
-        }), 500
-
 @app.route('/shorten', methods=['POST'])
 def shorten_url():
     try:
-        client = get_redis()
-        if client is None:
-            return jsonify({'error': 'Redis not initialized'}), 500
-
-        try:
-            data = request.get_json()
-        except Exception as e:
-            logger.error(f"JSON parsing error: {str(e)}")
-            return jsonify({'error': 'Invalid JSON data'}), 400
-
-        if not data:
-            return jsonify({'error': 'No JSON data provided'}), 400
-            
-        if 'url' not in data:
+        data = request.get_json()
+        if not data or 'url' not in data:
             return jsonify({'error': 'URL field is required'}), 400
 
-        original_url = data['url']
+        original_url = data['url'].strip()
         if not original_url:
             return jsonify({'error': 'URL cannot be empty'}), 400
 
-        # Generate a short hash for the URL
+        # 获取存储后端
+        storage = get_storage()
+        if storage is None:
+            return jsonify({'error': 'Storage backend not available'}), 500
+
+        # 生成短 URL
         hash_object = hashlib.md5(original_url.encode())
         short_id = hash_object.hexdigest()[:6]
         
         try:
-            # Store in Redis with expiration (e.g., 30 days)
-            client.setex(short_id, 30 * 24 * 60 * 60, original_url)
-            logger.info(f"Stored URL in Redis: {short_id} -> {original_url}")
+            # 存储 URL（30天过期）
+            storage.set(short_id, original_url, 30 * 24 * 60 * 60)
             
-            # Verify storage
-            stored_url = client.get(short_id)
-            if not stored_url:
-                raise Exception("Failed to verify URL storage")
-                
+            base_url = "https://url-shorten-beryl.vercel.app"
+            short_url = f"{base_url}/{short_id}"
+            
+            # 记录使用的存储后端
+            storage_type = "Redis" if isinstance(storage, redis.Redis) else "Memory"
+            logger.info(f"URL shortened using {storage_type} storage: {short_url}")
+            
+            return jsonify({
+                'short_url': short_url,
+                'storage_type': storage_type.lower()
+            })
+            
         except Exception as e:
-            logger.error(f"Redis storage error: {str(e)}")
-            return jsonify({'error': f'Failed to store URL: {str(e)}'}), 500
-        
-        base_url = "https://url-shorten-beryl.vercel.app"
-        short_url = f"{base_url}/{short_id}"
-        logger.info(f"Generated short URL: {short_url}")
-        return jsonify({'short_url': short_url})
+            logger.error(f"Storage operation failed: {str(e)}")
+            return jsonify({'error': 'Failed to create short URL'}), 500
 
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
-        logger.error(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
 @app.route('/<short_id>')
 def redirect_to_url(short_id):
     try:
-        client = get_redis()
-        if client is None:
-            return 'Database not initialized', 500
+        storage = get_storage()
+        if storage is None:
+            return 'Storage backend not available', 500
             
-        logger.info(f"Looking up URL for ID: {short_id}")
-        original_url = client.get(short_id)
-        
-        if original_url is None:
-            logger.warning(f"URL not found for ID: {short_id}")
+        original_url = storage.get(short_id)
+        if not original_url:
             return 'URL not found', 404
             
-        logger.info(f"Found URL: {original_url}")
         return redirect(original_url, code=302)
 
     except Exception as e:
         logger.error(f"Redirect error: {str(e)}")
-        logger.error(traceback.format_exc())
         return 'Error processing redirect', 500
+
+@app.route('/storage/status')
+def storage_status():
+    """Check storage backend status"""
+    try:
+        storage = get_storage()
+        
+        if isinstance(storage, redis.Redis):
+            try:
+                storage.ping()
+                status = {
+                    'type': 'redis',
+                    'status': 'connected',
+                    'message': 'Redis is working properly'
+                }
+            except Exception as e:
+                status = {
+                    'type': 'redis',
+                    'status': 'error',
+                    'message': f'Redis error: {str(e)}'
+                }
+        else:
+            status = {
+                'type': 'memory',
+                'status': 'active',
+                'message': 'Using in-memory storage as fallback'
+            }
+            
+        return jsonify(status)
+        
+    except Exception as e:
+        return jsonify({
+            'type': 'unknown',
+            'status': 'error',
+            'message': f'Error checking storage status: {str(e)}'
+        }), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5003)
