@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>日语学习助手</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://unpkg.com/tesseract.js@v2.1.0/dist/tesseract.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>日语学习助手</h1>
+            <p class="subtitle">OCR识别 + 生词本管理</p>
+            <a href="index.html" class="back-link">返回首页</a>
+        </header>
+
+        <div class="main-content">
+            <div class="ocr-section">
+                <h2>图片识别区域</h2>
+                <div class="upload-area" id="dropZone">
+                    <input type="file" id="fileInput" accept="image/*">
+                    <label for="fileInput" class="upload-label">
+                        点击或拖拽图片到此处
+                        <div class="upload-hint">也可以直接粘贴图片 (Ctrl+V)</div>
+                    </label>
+                    <img id="preview" style="display: none; max-width: 100%;">
+                </div>
+                <button id="startOCR" class="primary-btn">开始识别</button>
+                <div id="ocrProgress" class="progress-bar" style="display: none;">
+                    <div class="progress"></div>
+                </div>
+            </div>
+
+            <div class="word-section">
+                <h2>识别结果</h2>
+                <div id="ocrResult" class="ocr-result">
+                    <div id="recognizedLines" class="recognized-lines">
+                        <!-- 识别的行将在这里显示 -->
+                    </div>
+                </div>
+                
+                <div class="vocabulary-input">
+                    <h3>添加到生词本</h3>
+                    <div class="word-input-group">
+                        <input type="text" id="japaneseWord" placeholder="日语单词">
+                        <input type="text" id="meaning" placeholder="中文含义">
+                        <button id="addWord" class="secondary-btn">添加</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="vocabulary-section">
+                <h2>我的生词本</h2>
+                <div class="vocabulary-list" id="vocabularyList">
+                    <!-- 生词将在这里显示 -->
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="japanese-study.js"></script>
+</body>
+</html>

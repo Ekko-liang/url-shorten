@@ -1,0 +1,326 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    line-height: 1.6;
+    background-color: #f5f5f7;
+    color: #333;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+header {
+    text-align: center;
+    margin-bottom: 3rem;
+}
+
+h1 {
+    font-size: 2.5rem;
+    color: #1d1d1f;
+    margin-bottom: 0.5rem;
+}
+
+.subtitle {
+    color: #6e6e73;
+    font-size: 1.1rem;
+}
+
+.tools-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 2rem;
+}
+
+.tool-card {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    transition: transform 0.3s ease;
+    text-decoration: none;
+    color: inherit;
+}
+
+.tool-card:hover {
+    transform: translateY(-5px);
+}
+
+.tool-icon {
+    font-size: 2rem;
+    margin-bottom: 1rem;
+}
+
+.tool-card h3 {
+    color: #1d1d1f;
+    margin-bottom: 1rem;
+}
+
+.tool-description {
+    color: #6e6e73;
+    font-size: 0.9rem;
+}
+
+.back-link {
+    display: inline-block;
+    margin-top: 1rem;
+    color: #0071e3;
+    text-decoration: none;
+}
+
+.back-link:hover {
+    text-decoration: underline;
+}
+
+/* 日语学习工具样式 */
+.main-content {
+    background: white;
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.upload-area {
+    border: 2px dashed #d2d2d7;
+    border-radius: 8px;
+    padding: 2rem;
+    text-align: center;
+    margin-bottom: 1rem;
+    cursor: pointer;
+    transition: border-color 0.3s ease;
+}
+
+.upload-area:hover {
+    border-color: #0071e3;
+}
+
+.upload-label {
+    display: block;
+    margin-bottom: 1rem;
+    color: #6e6e73;
+}
+
+#fileInput {
+    display: none;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 4px;
+    background-color: #f5f5f7;
+    border-radius: 2px;
+    margin: 1rem 0;
+    overflow: hidden;
+}
+
+.progress {
+    width: 0%;
+    height: 100%;
+    background-color: #0071e3;
+    transition: width 0.3s ease;
+}
+
+.ocr-result {
+    margin: 1rem 0;
+}
+
+#recognizedText {
+    width: 100%;
+    min-height: 100px;
+    padding: 0.5rem;
+    border: 1px solid #d2d2d7;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+}
+
+.word-input-group {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.vocabulary-list {
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid #d2d2d7;
+    border-radius: 6px;
+    padding: 1rem;
+}
+
+.word-card {
+    background: #f5f5f7;
+    border-radius: 6px;
+    padding: 0.8rem;
+    margin-bottom: 0.5rem;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.5rem;
+}
+
+.word-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.word-japanese {
+    font-size: 1.1rem;
+    font-weight: bold;
+}
+
+.word-reading {
+    color: #6e6e73;
+    font-size: 0.9rem;
+}
+
+.word-meaning {
+    color: #1d1d1f;
+}
+
+.delete-word {
+    background-color: #ff3b30;
+    color: white;
+    border: none;
+    padding: 0.3rem 0.6rem;
+    border-radius: 4px;
+    cursor: pointer;
+    height: fit-content;
+}
+
+.primary-btn {
+    background-color: #0071e3;
+    color: white;
+    padding: 0.8rem 1.5rem;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    font-size: 1rem;
+    width: 100%;
+}
+
+.secondary-btn {
+    background-color: #2c2c2e;
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+}
+
+.upload-hint {
+    font-size: 0.8rem;
+    color: #86868b;
+    margin-top: 0.5rem;
+}
+
+.recognized-lines {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.recognized-line {
+    background: #f5f5f7;
+    border-radius: 6px;
+    padding: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.line-text {
+    font-family: "Hiragino Kaku Gothic Pro", "MS Gothic", sans-serif;
+    font-size: 1.1rem;
+}
+
+.line-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.use-text-btn {
+    background-color: #0071e3;
+    color: white;
+    border: none;
+    padding: 0.4rem 0.8rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+
+.use-text-btn:hover {
+    background-color: #0077ed;
+}
+
+/* URL Shortener Styles */
+.url-shortener-container {
+    max-width: 600px;
+    margin: 50px auto;
+    padding: 20px;
+    text-align: center;
+    background-color: #ffffff;
+    border-radius: 10px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+.url-shortener-container h1 {
+    color: #333;
+    margin-bottom: 30px;
+}
+
+.input-group {
+    margin-bottom: 20px;
+    display: flex;
+    gap: 10px;
+}
+
+input[type="url"] {
+    flex: 1;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    font-size: 16px;
+}
+
+button {
+    padding: 10px 20px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+button:hover {
+    background-color: #0056b3;
+}
+
+.result-container {
+    margin-top: 20px;
+    padding: 10px;
+    border-radius: 5px;
+}
+
+#shortUrl {
+    word-break: break-all;
+    margin-bottom: 10px;
+    color: #007bff;
+}
+
+#copyButton {
+    background-color: #28a745;
+}
+
+#copyButton:hover {
+    background-color: #218838;
+}
