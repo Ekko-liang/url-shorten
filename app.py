@@ -1,62 +1,51 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, redirect
 import hashlib
-import sqlite3
+import redis
 import os
 
 app = Flask(__name__)
 
-# Initialize in-memory SQLite database for Vercel (since Vercel's filesystem is read-only)
-def init_db():
-    conn = sqlite3.connect(':memory:')
-    c = conn.cursor()
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS urls
-        (id TEXT PRIMARY KEY, original_url TEXT)
-    ''')
-    conn.commit()
-    return conn
-
-# Global connection for in-memory database
-db_conn = init_db()
+# 使用Redis数据库
+redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
+redis_client = redis.from_url(redis_url)
 
 @app.route('/')
 def index():
+    print("Accessing index page")  # Debug log
     return render_template('index.html')
 
 @app.route('/shorten', methods=['POST'])
 def shorten_url():
+    print("Received shorten request")  # Debug log
     original_url = request.json.get('url')
     if not original_url:
+        print("No URL provided")  # Debug log
         return jsonify({'error': 'No URL provided'}), 400
     
     # Generate a short hash for the URL
     hash_object = hashlib.md5(original_url.encode())
     short_id = hash_object.hexdigest()[:6]
     
-    # Store in database
-    c = db_conn.cursor()
-    try:
-        c.execute('INSERT INTO urls (id, original_url) VALUES (?, ?)',
-                 (short_id, original_url))
-        db_conn.commit()
-    except sqlite3.IntegrityError:
-        # If the short_id already exists, just return it
-        pass
+    # Store in Redis
+    redis_client.set(short_id, original_url)
     
-    # Get the base URL from request
-    base_url = request.headers.get('X-Forwarded-Proto', 'http') + '://' + request.headers.get('X-Forwarded-Host', request.host)
+    # Use hardcoded domain for Vercel deployment
+    base_url = "https://url-shorten-beryl.vercel.app"
     short_url = f"{base_url}/{short_id}"
+    print(f"Generated short URL: {short_url}")  # Debug log
     return jsonify({'short_url': short_url})
 
 @app.route('/<short_id>')
 def redirect_to_url(short_id):
-    c = db_conn.cursor()
-    c.execute('SELECT original_url FROM urls WHERE id = ?', (short_id,))
-    result = c.fetchone()
+    print(f"Accessing short URL with ID: {short_id}")  # Debug log
+    original_url = redis_client.get(short_id)
     
-    if result is None:
+    if original_url is None:
+        print(f"URL not found for ID: {short_id}")  # Debug log
         return 'URL not found', 404
-    return render_template('redirect.html', url=result[0])
+        
+    print(f"Redirecting to: {original_url.decode('utf-8')}")  # Debug log
+    return redirect(original_url.decode('utf-8'), code=302)
 
 # For local testing
 if __name__ == '__main__':
