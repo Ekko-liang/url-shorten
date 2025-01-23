@@ -11,32 +11,58 @@ app = Flask(__name__)
 CORS(app)
 
 # 配置日志
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 def get_redis_client():
-    redis_url = os.getenv('REDIS_URL')
-    logger.info(f"Using Redis URL: {redis_url[:20]}...")  # 只显示URL的前20个字符，保护敏感信息
+    # 获取并记录所有环境变量（注意不要记录敏感值）
+    env_vars = {k: '***' if 'URL' in k or 'KEY' in k or 'SECRET' in k else v 
+                for k, v in os.environ.items()}
+    logger.info(f"Environment variables: {json.dumps(env_vars, indent=2)}")
     
+    redis_url = os.getenv('REDIS_URL')
     if not redis_url:
+        logger.error("REDIS_URL environment variable is missing")
         raise ValueError("REDIS_URL environment variable is required")
-        
+    
+    # 记录 URL 的结构（隐藏敏感信息）
+    parts = redis_url.split('@')
+    if len(parts) == 2:
+        auth_part = parts[0].split(':')
+        if len(auth_part) == 3:  # protocol:username:password
+            masked_url = f"{auth_part[0]}:{auth_part[1]}:***@{parts[1]}"
+            logger.info(f"Redis URL structure: {masked_url}")
+        else:
+            logger.error("Unexpected Redis URL format (auth part)")
+    else:
+        logger.error("Unexpected Redis URL format (missing @)")
+    
     try:
         client = redis.from_url(redis_url)
         # 测试连接
         client.ping()
         logger.info("Redis connection successful")
         return client
-    except Exception as e:
+    except redis.ConnectionError as e:
         logger.error(f"Redis connection error: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected Redis error: {str(e)}")
         logger.error(traceback.format_exc())
         raise
 
 # 初始化Redis客户端
 try:
+    logger.info("Initializing Redis client...")
     redis_client = get_redis_client()
+    logger.info("Redis client initialized successfully")
 except Exception as e:
     logger.error(f"Failed to initialize Redis: {str(e)}")
+    logger.error(traceback.format_exc())
     redis_client = None
 
 @app.route('/')
@@ -47,10 +73,17 @@ def index():
 def debug():
     """Debug endpoint to check Redis connection"""
     try:
+        # 获取所有环境变量（隐藏敏感值）
+        env_vars = {k: '***' if 'URL' in k or 'KEY' in k or 'SECRET' in k else v 
+                   for k, v in os.environ.items()}
+        
         if redis_client is None:
             return jsonify({
                 'status': 'error',
-                'message': 'Redis client not initialized'
+                'message': 'Redis client not initialized',
+                'environment': env_vars,
+                'redis_url_exists': bool(os.getenv('REDIS_URL')),
+                'redis_url_length': len(os.getenv('REDIS_URL', ''))
             }), 500
             
         # 测试Redis连接
@@ -59,16 +92,18 @@ def debug():
         return jsonify({
             'status': 'ok',
             'redis_connected': True,
-            'env_vars': {
-                'REDIS_URL_EXISTS': bool(os.getenv('REDIS_URL')),
-                'REDIS_URL_LENGTH': len(os.getenv('REDIS_URL', ''))
-            }
+            'environment': env_vars,
+            'redis_url_exists': bool(os.getenv('REDIS_URL')),
+            'redis_url_length': len(os.getenv('REDIS_URL', ''))
         })
     except Exception as e:
         return jsonify({
             'status': 'error',
             'message': str(e),
-            'traceback': traceback.format_exc()
+            'traceback': traceback.format_exc(),
+            'environment': env_vars,
+            'redis_url_exists': bool(os.getenv('REDIS_URL')),
+            'redis_url_length': len(os.getenv('REDIS_URL', ''))
         }), 500
 
 @app.route('/shorten', methods=['POST'])
